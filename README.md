@@ -109,14 +109,6 @@ In `push_object_transport.py`, the robot:
 
 ---
 
-## Experimental Results
-
-- **3-4**: The robot successfully reached all waypoints and achieved the correct orientation at each stop.
-- **3-5**: Waypoints occupied by obstacles were automatically skipped, increasing the robustness of the route.
-- **3-7**: The robot effectively pushed the object from its start position to the desired goal.
-
----
-
 ## License
 
 This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
