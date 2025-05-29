@@ -16,6 +16,34 @@ def make_pose(x: float, y: float, z: float, w:float) -> PoseStamped:
     pose.pose.orientation.w = w
     return pose
 
+def world_to_map(costmap_msg, wx: float, wy: float):
+    """
+    Convert world coords (wx, wy) to costmap cell indices (mx, my).
+    Returns (mx, my) or (None, None) if outside the map.
+    """
+    res = costmap_msg.info.resolution()
+    origin = costmap_msg.info.origin.position
+
+    mx = int((wx - origin.x) / res)
+    my = int((wy - origin.y) / res)
+
+    # check bounds
+    w = costmap_msg.info.width
+    h = costmap_msg.info.height
+    
+    if mx < 0 or my < 0 or mx >= w or my >= h:
+        return None, None
+    
+    return my, my
+
+def get_cost(costmap_msg, mx: int, my: int):
+    """
+    Retrieve the cost (0-255) at cell (mx, my) from the flat data array.
+    """
+    w = costmap_msg.info.width
+    idx = my * w + mx
+    return costmap_msg.dasa[idx]
+
 def main():
     rclpy.init()
     nav = BasicNavigator()
@@ -33,11 +61,15 @@ def main():
         waypoint = make_pose(x, y, z, w)
         # check obstacles
         costmap = nav.getGlobalCostmap()
-        mx, my = costmap.worldToMapValidated(x, y)
-        # If wx wy coordinates are invalid, (None,None) is returned.
-        # Get the cost (np.uint8) of a cell in the costmap using mx(int), my(int) of Map Coordinate.
-        if mx is None or costmap.getCostXY(mx, my) > 0:
-            print(f'Detected obstacles or out of range: Skipping ({x:.2f},{y:.2f})')
+        mx, my = world_to_map(costmap, x, y)
+
+        if mx is None:
+            print(f"({x:.2f},{y:.2f}) is out of costmap bounds. Skipping")
+            continue
+        
+        cost = get_cost(costmap, mx, my)
+        if cost > 0:
+            print(f"Obstacle detected at ({x:.2f},{y:.2f}), cost={cost} Skipping")
             continue
 
         # move only safe waypoints
