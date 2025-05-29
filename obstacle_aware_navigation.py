@@ -1,34 +1,36 @@
 import rclpy
 import time
-import math
 from geometry_msgs.msg import PoseStamped
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 
-def make_pose(x: float, y: float, yaw: float) -> PoseStamped:
+def make_pose(x: float, y: float, z: float, w:float) -> PoseStamped:
     pose = PoseStamped()
     pose.header.frame_id = 'map'
     pose.header.stamp = rclpy.clock.Clock().now().to_msg()
-    pose.pose.position.x = x; pose.pose.position.y = y; pose.pose.position.z = 0.0
-    pose.pose.orientation.x = 0.0; pose.pose.orientation.y = 0.0
-    pose.pose.orientation.z = 0.0
-    pose.pose.orientation.w = 0.0
+    pose.pose.position.x = x 
+    pose.pose.position.y = y
+    pose.pose.position.z = 0.0
+    pose.pose.orientation.x = 0.0
+    pose.pose.orientation.y = 0.0
+    pose.pose.orientation.z = z
+    pose.pose.orientation.w = w
     return pose
 
 def main():
     rclpy.init()
     nav = BasicNavigator()
     nav.waitUntilNav2Active()
-    nav.setInitialPose(make_pose(0.0, 0.0, 0.0)) # set initial position
 
-    # list of waypoints: [x, y, yaw]
+    # list of waypoints: [x, y, z, w]
     route = [
-        (1.0, 0.5, 0.0),
-        (2.0, -0.3, 0.0),
-        (0.5, -1.5, 0.0),
+        (-0.178, -0.600, -0.116, 0.993),
+        (2.178, -0.865, -0.987, 0.156),
+        (1.083, 1.165, -0.117, 0,993),
+        (3.028, 1.096, 0.902, 0.431),
+        (1.829, 2.108, 0.970, 0.239)
     ]
-
-    for x, y, yaw in route:
-        waypoint = make_pose(x, y, yaw)
+    for x, y, z, w in route:
+        waypoint = make_pose(x, y, z, w)
         # check obstacles
         costmap = nav.getGlobalCostmap()
         mx, my = costmap.worldToMapValidated(x, y)

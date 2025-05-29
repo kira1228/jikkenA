@@ -1,6 +1,5 @@
 import rclpy
 import time
-import math
 from geometry_msgs.msg import PoseStamped
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 
@@ -22,10 +21,6 @@ def main():
     rclpy.init()
     navigator = BasicNavigator()
     navigator.waitUntilNav2Active()
-    
-    # create initial position
-    init = make_pose(0.0, 0.0, 0.0)
-    navigator.setInitialPose(init)
 
     # list of waypoints: [x, y, z, w]
     route = [
@@ -35,9 +30,9 @@ def main():
         (3.028, 1.096, 0.902, 0.431),
         (1.829, 2.108, 0.970, 0.239)
     ]
-    poses = [make_pose(x, y, yaw) for x, y, yaw in route]
+    poses = [make_pose(x, y, z, w) for x, y, z, w in route]
 
-    navigator.goThroughPoses(poses)
+    navigator.followWaypoints(poses)
     while not navigator.isTaskComplete():
         time.sleep(0.2)
 
