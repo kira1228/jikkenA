@@ -1,224 +1,24 @@
+#!/usr/bin/env python3
 import rclpy
 import time
+import math
+
 from geometry_msgs.msg import PoseStamped
+from sensor_msgs.msg import LaserScan
+from tf2_ros import Buffer, TransformListener, TransformException
+from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
+from tf2_ros.buffer_interface import TransformStamped
+
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
-
-#! /usr/bin/env python3
-# Copyright 2021 Samsung Research America
-# Copyright 2022 Stevedan Ogochukwu Omodolor
-# Copyright 2022 Jaehun Jackson Kim
-# Copyright 2022 Afif Swaidan
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""
-This is a Python3 API for costmap 2d messages from the stack.
-
-It provides the basic conversion, get/set,
-and handling semantics found in the costmap 2d C++ API.
-"""
-
-from typing import Optional
-
-from builtin_interfaces.msg import Time
-from nav_msgs.msg import OccupancyGrid
-import numpy as np
-from numpy.typing import NDArray
-
-
-class PyCostmap2D:
-    """
-    PyCostmap2D.
-
-    Costmap Python3 API for OccupancyGrids to populate from published messages
-    """
-
-    def __init__(self, occupancy_map: OccupancyGrid) -> None:
-        """
-        Initialize costmap2D.
-
-        Args
-        ----
-            occupancy_map (OccupancyGrid): 2D OccupancyGrid Map
-
-        Returns
-        -------
-            None
-
-        """
-        self.size_x: int = occupancy_map.info.width
-        self.size_y: int = occupancy_map.info.height
-        self.resolution: float = occupancy_map.info.resolution
-        self.origin_x: float = occupancy_map.info.origin.position.x
-        self.origin_y: float = occupancy_map.info.origin.position.y
-        self.global_frame_id: str = occupancy_map.header.frame_id
-        self.costmap_timestamp: Time = occupancy_map.header.stamp
-        # Extract costmap
-        self.costmap: NDArray[np.uint8] = np.array(occupancy_map.data, dtype=np.uint8)
-
-    def getSizeInCellsX(self) -> int:
-        """Get map width in cells."""
-        return self.size_x
-
-    def getSizeInCellsY(self) -> int:
-        """Get map height in cells."""
-        return self.size_y
-
-    def getSizeInMetersX(self) -> float:
-        """Get x axis map size in meters."""
-        return (self.size_x - 1 + 0.5) * self.resolution
-
-    def getSizeInMetersY(self) -> float:
-        """Get y axis map size in meters."""
-        return (self.size_y - 1 + 0.5) * self.resolution
-
-    def getOriginX(self) -> float:
-        """Get the origin x axis of the map [m]."""
-        return self.origin_x
-
-    def getOriginY(self) -> float:
-        """Get the origin y axis of the map [m]."""
-        return self.origin_y
-
-    def getResolution(self) -> float:
-        """Get map resolution [m/cell]."""
-        return self.resolution
-
-    def getGlobalFrameID(self) -> str:
-        """Get global frame_id."""
-        return self.global_frame_id
-
-    def getCostmapTimestamp(self) -> Time:
-        """Get costmap timestamp."""
-        return self.costmap_timestamp
-
-    def getCostXY(self, mx: int, my: int) -> np.uint8:
-        """
-        Get the cost of a cell in the costmap using map coordinate XY.
-
-        Args
-        ----
-            mx (int): map coordinate X to get cost
-            my (int): map coordinate Y to get cost
-
-        Returns
-        -------
-            np.uint8: cost of a cell
-
-        """
-        return np.uint8(self.costmap[self.getIndex(mx, my)])
-
-    def getCostIdx(self, index: int) -> np.uint8:
-        """
-        Get the cost of a cell in the costmap using Index.
-
-        Args
-        ----
-            index (int): index of cell to get cost
-
-        Returns
-        -------
-            np.uint8: cost of a cell
-
-        """
-        return np.uint8(self.costmap[index])
-
-    def setCost(self, mx: int, my: int, cost: np.uint8) -> None:
-        """
-        Set the cost of a cell in the costmap using map coordinate XY.
-
-        Args
-        ----
-            mx (int): map coordinate X to get cost
-            my (int): map coordinate Y to get cost
-            cost (np.uint8): The cost to set the cell
-
-        Returns
-        -------
-            None
-
-        """
-        self.costmap[self.getIndex(mx, my)] = cost
-
-    def mapToWorld(self, mx: int, my: int) -> tuple[float, float]:
-        """
-        Get the world coordinate XY using map coordinate XY.
-
-        Args
-        ----
-            mx (int): map coordinate X to get world coordinate
-            my (int): map coordinate Y to get world coordinate
-
-        Returns
-        -------
-            tuple of float: wx, wy
-            wx (float) [m]: world coordinate X
-            wy (float) [m]: world coordinate Y
-
-        """
-        wx = self.origin_x + (mx + 0.5) * self.resolution
-        wy = self.origin_y + (my + 0.5) * self.resolution
-        return (wx, wy)
-
-    def worldToMapValidated(self, wx: float, wy: float) -> tuple[Optional[int], Optional[int]]:
-        """
-        Get the map coordinate XY using world coordinate XY.
-
-        Args
-        ----
-            wx (float) [m]: world coordinate X to get map coordinate
-            wy (float) [m]: world coordinate Y to get map coordinate
-
-        Returns
-        -------
-            (None, None): if coordinates are invalid
-            tuple of int: mx, my (if coordinates are valid)
-            mx (int): map coordinate X
-            my (int): map coordinate Y
-
-        """
-        if wx < self.origin_x or wy < self.origin_y:
-            return (None, None)
-        mx = int((wx - self.origin_x) // self.resolution)
-        my = int((wy - self.origin_y) // self.resolution)
-        if mx < self.size_x and my < self.size_y:
-            return (mx, my)
-        return (None, None)
-
-    def getIndex(self, mx: int, my: int) -> int:
-        """
-        Get the index of the cell using map coordinate XY.
-
-        Args
-        ----
-            mx (int): map coordinate X to get Index
-            my (int): map coordinate Y to get Index
-
-        Returns
-        -------
-            int: The index of the cell
-
-        """
-        return my * self.size_x + mx
 
 def make_pose(x: float, y: float, z: float, w: float) -> PoseStamped:
     """
-    map フレームの姿勢メッセージを作成するヘルパー関数
+    マップ座標系(frame_id='map')での目標姿勢を生成するヘルパー関数
     """
     pose = PoseStamped()
     pose.header.frame_id = 'map'
     pose.header.stamp = rclpy.clock.Clock().now().to_msg()
-    pose.pose.position.x = x
+    pose.pose.position.x = x 
     pose.pose.position.y = y
     pose.pose.position.z = 0.0
     pose.pose.orientation.x = 0.0
@@ -227,72 +27,173 @@ def make_pose(x: float, y: float, z: float, w: float) -> PoseStamped:
     pose.pose.orientation.w = w
     return pose
 
-def world_to_map(costmap: 'PyCostmap2D', wx: float, wy: float) -> tuple[int, int] | tuple[None, None]:
+def lookup_transform(buffer: Buffer, from_frame: str, to_frame: str, time) -> TransformStamped:
     """
-    PyCostmap2D インスタンスを使って、世界座標 (wx, wy) を
-    コストマップのセル座標 (mx, my) に変換する。
-    範囲外なら (None, None) を返す。
+    TF2 バッファから from_frame → to_frame の変換を取得するヘルパー関数
+    （例：'map' → 'base_link' など。）
     """
-    mx, my = costmap.worldToMapValidated(wx, wy)
-    return (mx, my)
+    try:
+        # time を None にすると最新時刻の変換を取得する
+        return buffer.lookup_transform(
+            to_frame,   # target_frame
+            from_frame, # source_frame
+            time,
+            timeout=rclpy.duration.Duration(seconds=0.5)
+        )
+    except (LookupException, ConnectivityException, ExtrapolationException, TransformException) as e:
+        return None
 
-def get_cost(costmap: 'PyCostmap2D', mx: int, my: int) -> int:
+def world_to_robot(transform_map_to_base: TransformStamped, wx: float, wy: float):
     """
-    PyCostmap2D インスタンスから、マップセル座標 (mx, my) に対応する
-    コスト（0～255）を取得する。
+    マップ座標系における点 (wx, wy) をロボット(base_link)座標系に変換する。
+    戻り値は (rx, ry) で、base_link 座標系での座標。
     """
-    return int(costmap.getCostXY(mx, my))
+    # transform_map_to_base には、map → base_link の変換が入っている想定
+    # (source_frame='map', target_frame='base_link')
+    # RT行列を使って座標変換する
+    # 平面 (z=0) と仮定し、x,y だけを見ればよい
+    dx = wx - transform_map_to_base.transform.translation.x
+    dy = wy - transform_map_to_base.transform.translation.y
 
+    # 回転（クォータニオン → yaw）を取得
+    q = transform_map_to_base.transform.rotation
+    # yaw = atan2(2*(q.w*q.z + q.x*q.y), 1 - 2*(q.y*q.y + q.z*q.z))
+    siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+    cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+    yaw = math.atan2(siny_cosp, cosy_cosp)
+
+    # ワールド座標系（map）→ロボット座標系回転： 平面上での回転行列は
+    # [ cos(-yaw)  -sin(-yaw) ] [dx]
+    # [ sin(-yaw)   cos(-yaw) ] [dy]
+    # = [ cos(yaw) sin(yaw); -sin(yaw) cos(yaw) ] をかけると
+    # robot_x =  dx * cos(yaw) + dy * sin(yaw)
+    # robot_y = -dx * sin(yaw) + dy * cos(yaw)
+    rx =  dx * math.cos(yaw) + dy * math.sin(yaw)
+    ry = -dx * math.sin(yaw) + dy * math.cos(yaw)
+    return rx, ry
+
+def is_obstacle_in_waypoint(node, buffer: Buffer, wx: float, wy: float) -> bool:
+    """
+    LiDAR の最新データを取得し、ウェイポイント (wx, wy) が障害物で塞がれているかを判定する関数。
+    - node: rclpy ノード
+    - buffer: TF2 バッファ（'map'→'base_link' 変換が取得できる状態）
+    - (wx, wy): マップ座標系でのウェイポイント位置
+    戻り値: True=障害物あり→スキップすべき, False=障害物なし→進行可
+    """
+
+    # 1) map → base_link の変換を取得
+    t_map_to_robot = lookup_transform(buffer, 'map', 'base_link', rclpy.time.Time())
+    if t_map_to_robot is None:
+        node.get_logger().warn('TF lookup failed. Treat as obstacle present.')
+        return True
+
+    # 2) ウェイポイントをロボット座標系 (base_link) に変換
+    rx, ry = world_to_robot(t_map_to_robot, wx, wy)
+
+    # 3) ウェイポイントまでの直線距離と方位角を計算
+    distance_to_wp = math.hypot(rx, ry)
+    angle_to_wp = math.atan2(ry, rx)  # 角度：ロボット前方を 0 rad とする
+
+    # 4) 最新の LaserScan をブロッキング取得（秒数は適宜調整）
+    try:
+        scan: LaserScan = node.get_publisher_or_subscriber('/scan', LaserScan).last_message
+        # ※ rclpy では簡単にブロッキング購読できないので、
+        #    以下では wait_for_message を使った形にする
+        scan = rclpy.wait_for_message('/scan', LaserScan, node, timeout_sec=1.0)
+    except Exception:
+        node.get_logger().warn('Failed to receive LaserScan. Treat as obstacle present.')
+        return True
+
+    if scan is None:
+        node.get_logger().warn('No LaserScan received. Treat as obstacle present.')
+        return True
+
+    # 5) LaserScan データ（scan.ranges）から「angle_to_wp」に該当するインデックスを求める
+    # LaserScan でカバーしている角度範囲: [angle_min, angle_max], インクリメント: angle_increment
+    # idx = (angle_to_wp - angle_min) / angle_increment
+    # ただし idx が負や最大を超えるときは輪切りに clamp する
+    angle_min = scan.angle_min
+    angle_max = scan.angle_max
+    angle_inc = scan.angle_increment
+    # LaserScan は原点（ロボット中心）から各方向へ走査
+    # angle_to_wp が angle_min〜angle_max の間でない場合、外へ外れた角度とみなす
+    if angle_to_wp < angle_min:
+        angle_to_wp = angle_min
+    elif angle_to_wp > angle_max:
+        angle_to_wp = angle_max
+
+    idx = int(round((angle_to_wp - angle_min) / angle_inc))
+    # インデックスの範囲補正
+    idx = max(0, min(idx, len(scan.ranges) - 1))
+
+    # 6) 当該方向のレンジ値を取得
+    laser_distance = scan.ranges[idx]
+    # nan/inf の場合は判定できないので「障害なし」とみなす
+    if math.isinf(laser_distance) or math.isnan(laser_distance):
+        return False
+
+    # 7) 「レーザーの距離」 < 「ウェイポイントまでの距離」の場合は途中に障害物ありと判断
+    if laser_distance < distance_to_wp:
+        # 十分マージンを取りたい場合は、ちょっと短く見積もる（例: laser_distance - 0.1 < distance_to_wp など）
+        return True
+
+    return False
 
 def main():
     rclpy.init()
-    nav = BasicNavigator()
+    node = rclpy.create_node('lidar_obstacle_checker')
+
+    # BasicNavigator を立ち上げ
+    nav = BasicNavigator(node=node)
     nav.waitUntilNav2Active()
 
-    # waypoint のリスト [(x, y, z, w), ...]
+    # TF2 バッファとリスナーを作成
+    tf_buffer = Buffer()
+    tf_listener = TransformListener(tf_buffer, node)
+
+    # サブスクライバを準備しておく（LaserScan のみを扱いたいので型だけ定義する）
+    lidar_sub = node.create_subscription(
+        LaserScan,
+        '/scan',
+        lambda msg: None,
+        10
+    )
+    # ※ 実装例では rclpy.wait_for_message('/scan', LaserScan, node) を使って最新を取る方式にしてもよい
+
+    # ウェイポイントリスト [x, y, z, w]
     route = [
         (-0.178, -0.600, -0.116, 0.993),
         (2.178, -0.865, -0.987, 0.156),
-        (1.083, 1.165, -0.117, 0.993),  
-        (3.028, 1.096, 0.902, 0.431),
-        (1.829, 2.108, 0.970, 0.239),
+        (1.083,  1.165, -0.117, 0.993),
+        (3.028,  1.096,  0.902, 0.431),
+        (1.829,  2.108,  0.970, 0.239)
     ]
 
     for x, y, z, w in route:
+        # ① LiDAR ベースで障害物チェック
+        obstacle = is_obstacle_in_waypoint(node, tf_buffer, x, y)
+        if obstacle:
+            node.get_logger().info(f'LiDAR: Obstacle detected toward ({x:.2f}, {y:.2f}) → SKIP')
+            continue  # 障害物があればスキップ
+
+        # ② 障害物がなければ、BasicNavigator で移動開始
         waypoint = make_pose(x, y, z, w)
-
-        # getGlobalCostmap() は PyCostmap2D を返す
-        costmap: 'PyCostmap2D' = nav.getGlobalCostmap()
-
-        # まず世界座標 (x,y) → マップセル座標 (mx, my) に変換
-        mx, my = world_to_map(costmap, x, y)
-        if mx is None:
-            print(f"({x:.2f}, {y:.2f}) はコストマップ範囲外です。スキップします。")
-            continue
-
-        # セル座標 (mx, my) のコストを取得
-        cost = get_cost(costmap, mx, my)
-        if cost > 0:
-            print(f"({x:.2f}, {y:.2f}) に障害物を検出 (cost={cost})。スキップします。")
-            continue
-
-        # 安全と判断した waypoint に移動
         nav.goToPose(waypoint)
+
+        # ③ ゴール到達まで待機
         while not nav.isTaskComplete():
             time.sleep(0.2)
 
         res = nav.getResult()
         if res == TaskResult.SUCCEEDED:
-            print(f"({x:.2f}, {y:.2f}) に到達しました。")
+            node.get_logger().info(f'Reached ({x:.2f}, {y:.2f})')
         else:
-            print(f"({x:.2f}, {y:.2f}) への移動に失敗しました: {res}")
+            node.get_logger().warn(f'Failed to reach ({x:.2f}, {y:.2f}): {res}')
 
+    # ナビゲータのクリーンアップ
     nav.lifecycleShutdown()
     nav.destroyNode()
     rclpy.shutdown()
 
-
 if __name__ == '__main__':
     main()
-
-
