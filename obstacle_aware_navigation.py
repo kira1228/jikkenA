@@ -3,11 +3,222 @@ import time
 from geometry_msgs.msg import PoseStamped
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 
-def make_pose(x: float, y: float, z: float, w:float) -> PoseStamped:
+#! /usr/bin/env python3
+# Copyright 2021 Samsung Research America
+# Copyright 2022 Stevedan Ogochukwu Omodolor
+# Copyright 2022 Jaehun Jackson Kim
+# Copyright 2022 Afif Swaidan
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+This is a Python3 API for costmap 2d messages from the stack.
+
+It provides the basic conversion, get/set,
+and handling semantics found in the costmap 2d C++ API.
+"""
+
+from typing import Optional
+
+from builtin_interfaces.msg import Time
+from nav_msgs.msg import OccupancyGrid
+import numpy as np
+from numpy.typing import NDArray
+
+
+class PyCostmap2D:
+    """
+    PyCostmap2D.
+
+    Costmap Python3 API for OccupancyGrids to populate from published messages
+    """
+
+    def __init__(self, occupancy_map: OccupancyGrid) -> None:
+        """
+        Initialize costmap2D.
+
+        Args
+        ----
+            occupancy_map (OccupancyGrid): 2D OccupancyGrid Map
+
+        Returns
+        -------
+            None
+
+        """
+        self.size_x: int = occupancy_map.info.width
+        self.size_y: int = occupancy_map.info.height
+        self.resolution: float = occupancy_map.info.resolution
+        self.origin_x: float = occupancy_map.info.origin.position.x
+        self.origin_y: float = occupancy_map.info.origin.position.y
+        self.global_frame_id: str = occupancy_map.header.frame_id
+        self.costmap_timestamp: Time = occupancy_map.header.stamp
+        # Extract costmap
+        self.costmap: NDArray[np.uint8] = np.array(occupancy_map.data, dtype=np.uint8)
+
+    def getSizeInCellsX(self) -> int:
+        """Get map width in cells."""
+        return self.size_x
+
+    def getSizeInCellsY(self) -> int:
+        """Get map height in cells."""
+        return self.size_y
+
+    def getSizeInMetersX(self) -> float:
+        """Get x axis map size in meters."""
+        return (self.size_x - 1 + 0.5) * self.resolution
+
+    def getSizeInMetersY(self) -> float:
+        """Get y axis map size in meters."""
+        return (self.size_y - 1 + 0.5) * self.resolution
+
+    def getOriginX(self) -> float:
+        """Get the origin x axis of the map [m]."""
+        return self.origin_x
+
+    def getOriginY(self) -> float:
+        """Get the origin y axis of the map [m]."""
+        return self.origin_y
+
+    def getResolution(self) -> float:
+        """Get map resolution [m/cell]."""
+        return self.resolution
+
+    def getGlobalFrameID(self) -> str:
+        """Get global frame_id."""
+        return self.global_frame_id
+
+    def getCostmapTimestamp(self) -> Time:
+        """Get costmap timestamp."""
+        return self.costmap_timestamp
+
+    def getCostXY(self, mx: int, my: int) -> np.uint8:
+        """
+        Get the cost of a cell in the costmap using map coordinate XY.
+
+        Args
+        ----
+            mx (int): map coordinate X to get cost
+            my (int): map coordinate Y to get cost
+
+        Returns
+        -------
+            np.uint8: cost of a cell
+
+        """
+        return np.uint8(self.costmap[self.getIndex(mx, my)])
+
+    def getCostIdx(self, index: int) -> np.uint8:
+        """
+        Get the cost of a cell in the costmap using Index.
+
+        Args
+        ----
+            index (int): index of cell to get cost
+
+        Returns
+        -------
+            np.uint8: cost of a cell
+
+        """
+        return np.uint8(self.costmap[index])
+
+    def setCost(self, mx: int, my: int, cost: np.uint8) -> None:
+        """
+        Set the cost of a cell in the costmap using map coordinate XY.
+
+        Args
+        ----
+            mx (int): map coordinate X to get cost
+            my (int): map coordinate Y to get cost
+            cost (np.uint8): The cost to set the cell
+
+        Returns
+        -------
+            None
+
+        """
+        self.costmap[self.getIndex(mx, my)] = cost
+
+    def mapToWorld(self, mx: int, my: int) -> tuple[float, float]:
+        """
+        Get the world coordinate XY using map coordinate XY.
+
+        Args
+        ----
+            mx (int): map coordinate X to get world coordinate
+            my (int): map coordinate Y to get world coordinate
+
+        Returns
+        -------
+            tuple of float: wx, wy
+            wx (float) [m]: world coordinate X
+            wy (float) [m]: world coordinate Y
+
+        """
+        wx = self.origin_x + (mx + 0.5) * self.resolution
+        wy = self.origin_y + (my + 0.5) * self.resolution
+        return (wx, wy)
+
+    def worldToMapValidated(self, wx: float, wy: float) -> tuple[Optional[int], Optional[int]]:
+        """
+        Get the map coordinate XY using world coordinate XY.
+
+        Args
+        ----
+            wx (float) [m]: world coordinate X to get map coordinate
+            wy (float) [m]: world coordinate Y to get map coordinate
+
+        Returns
+        -------
+            (None, None): if coordinates are invalid
+            tuple of int: mx, my (if coordinates are valid)
+            mx (int): map coordinate X
+            my (int): map coordinate Y
+
+        """
+        if wx < self.origin_x or wy < self.origin_y:
+            return (None, None)
+        mx = int((wx - self.origin_x) // self.resolution)
+        my = int((wy - self.origin_y) // self.resolution)
+        if mx < self.size_x and my < self.size_y:
+            return (mx, my)
+        return (None, None)
+
+    def getIndex(self, mx: int, my: int) -> int:
+        """
+        Get the index of the cell using map coordinate XY.
+
+        Args
+        ----
+            mx (int): map coordinate X to get Index
+            my (int): map coordinate Y to get Index
+
+        Returns
+        -------
+            int: The index of the cell
+
+        """
+        return my * self.size_x + mx
+
+def make_pose(x: float, y: float, z: float, w: float) -> PoseStamped:
+    """
+    map フレームの姿勢メッセージを作成するヘルパー関数
+    """
     pose = PoseStamped()
     pose.header.frame_id = 'map'
     pose.header.stamp = rclpy.clock.Clock().now().to_msg()
-    pose.pose.position.x = x 
+    pose.pose.position.x = x
     pose.pose.position.y = y
     pose.pose.position.z = 0.0
     pose.pose.orientation.x = 0.0
@@ -16,76 +227,72 @@ def make_pose(x: float, y: float, z: float, w:float) -> PoseStamped:
     pose.pose.orientation.w = w
     return pose
 
-def world_to_map(costmap_msg, wx: float, wy: float):
+def world_to_map(costmap: 'PyCostmap2D', wx: float, wy: float) -> tuple[int, int] | tuple[None, None]:
     """
-    Convert world coords (wx, wy) to costmap cell indices (mx, my).
-    Returns (mx, my) or (None, None) if outside the map.
+    PyCostmap2D インスタンスを使って、世界座標 (wx, wy) を
+    コストマップのセル座標 (mx, my) に変換する。
+    範囲外なら (None, None) を返す。
     """
-    res = costmap_msg.info.resolution()
-    origin = costmap_msg.info.origin.position
+    mx, my = costmap.worldToMapValidated(wx, wy)
+    return (mx, my)
 
-    mx = int((wx - origin.x) / res)
-    my = int((wy - origin.y) / res)
-
-    # check bounds
-    w = costmap_msg.info.width
-    h = costmap_msg.info.height
-    
-    if mx < 0 or my < 0 or mx >= w or my >= h:
-        return None, None
-    
-    return my, my
-
-def get_cost(costmap_msg, mx: int, my: int):
+def get_cost(costmap: 'PyCostmap2D', mx: int, my: int) -> int:
     """
-    Retrieve the cost (0-255) at cell (mx, my) from the flat data array.
+    PyCostmap2D インスタンスから、マップセル座標 (mx, my) に対応する
+    コスト（0～255）を取得する。
     """
-    w = costmap_msg.info.width
-    idx = my * w + mx
-    return costmap_msg.dasa[idx]
+    return int(costmap.getCostXY(mx, my))
+
 
 def main():
     rclpy.init()
     nav = BasicNavigator()
     nav.waitUntilNav2Active()
 
-    # list of waypoints: [x, y, z, w]
+    # waypoint のリスト [(x, y, z, w), ...]
     route = [
         (-0.178, -0.600, -0.116, 0.993),
         (2.178, -0.865, -0.987, 0.156),
-        (1.083, 1.165, -0.117, 0,993),
+        (1.083, 1.165, -0.117, 0.993),  
         (3.028, 1.096, 0.902, 0.431),
-        (1.829, 2.108, 0.970, 0.239)
+        (1.829, 2.108, 0.970, 0.239),
     ]
+
     for x, y, z, w in route:
         waypoint = make_pose(x, y, z, w)
-        # check obstacles
-        costmap = nav.getGlobalCostmap()
-        mx, my = world_to_map(costmap, x, y)
 
+        # getGlobalCostmap() は PyCostmap2D を返す
+        costmap: 'PyCostmap2D' = nav.getGlobalCostmap()
+
+        # まず世界座標 (x,y) → マップセル座標 (mx, my) に変換
+        mx, my = world_to_map(costmap, x, y)
         if mx is None:
-            print(f"({x:.2f},{y:.2f}) is out of costmap bounds. Skipping")
+            print(f"({x:.2f}, {y:.2f}) はコストマップ範囲外です。スキップします。")
             continue
-        
+
+        # セル座標 (mx, my) のコストを取得
         cost = get_cost(costmap, mx, my)
         if cost > 0:
-            print(f"Obstacle detected at ({x:.2f},{y:.2f}), cost={cost} Skipping")
+            print(f"({x:.2f}, {y:.2f}) に障害物を検出 (cost={cost})。スキップします。")
             continue
 
-        # move only safe waypoints
+        # 安全と判断した waypoint に移動
         nav.goToPose(waypoint)
         while not nav.isTaskComplete():
             time.sleep(0.2)
 
         res = nav.getResult()
         if res == TaskResult.SUCCEEDED:
-            print(f'reached ({x:.2f},{y:.2f}) ')
+            print(f"({x:.2f}, {y:.2f}) に到達しました。")
         else:
-            print(f'failed to reach ({x:.2f},{y:.2f}): {res}')
+            print(f"({x:.2f}, {y:.2f}) への移動に失敗しました: {res}")
 
     nav.lifecycleShutdown()
     nav.destroyNode()
     rclpy.shutdown()
 
+
 if __name__ == '__main__':
     main()
+
+
